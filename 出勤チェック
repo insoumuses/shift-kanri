@@ -1,0 +1,156 @@
+const REMOTE_WORK_START = "リモートワークを開始"; 
+const OFFICE_WORK_START = "オフィス勤務を開始";
+
+
+function testStuff() {
+  let testMessage = `【ホン】オフィス勤務を開始します。
+・勤務時間： 10:00 - 19:00　
+・休憩　　： 14:00 - 15:00`
+
+  let testTrue = testMessage.includes(REMOTE_WORK_START) || testMessage.includes(OFFICE_WORK_START)
+  console.log(testTrue)
+}
+
+
+function attendanceCheckV2() {
+  const now = new Date();
+  const hour = now.getHours();
+  const minutes = now.getMinutes();
+
+  const isTimeForCheck1 = hour == 9 && minutes <= 10;
+  const isTimeForCheck2 = hour == 9 && minutes > 30 && minutes <= 40;
+  const isTimeForCheck3 = hour == 9 && minutes > 50; //【6/12/26】100を超える場合があるっぽいので、追加のチェック
+  const isTimeForReport = hour == 10 && minutes <= 10;
+  // const isTimeForReport = true;
+  // オ：今は3回だけですが、配列に入れてsomeで「true」を確認するとかもありかも
+
+
+  let preworkMembers; // 報告時、このデータを使うのでifの外に定義
+  if (isTimeForCheck1 || isTimeForCheck2 || isTimeForCheck3 || isTimeForReport) {
+  // if (true) {
+    // キャッシュから現在の出勤前メンバーリストを読み取る
+    //オ：todayKeyもpropに追加してもいいかな？
+    let todayKey = now.getFullYear() + "-" + (now.getMonth() + 1) + "-" + now.getDate();
+
+    let cache = CacheService.getScriptCache();
+    let cachedPreworkMembers = cache.get(todayKey);
+
+    preworkMembers = JSON.parse(cachedPreworkMembers);
+
+    //【4/9/26】バグ修正：出勤が10時までなので、10時以降発動する際は10:00を基準にします
+    //【4/21/26】バグ修正：s, msも関わるので、setMinutes(0, 0, 0)にしました
+    // オ：ちなみにsetMinutesはnowを変更しているので、良くないかな…（結果的に問題ないけど）
+    let checkTime = isTimeForReport ? new Date(now.setMinutes(0, 0, 0)) : now;
+
+    //オ：「業務を開始」を使う人もいるようです
+    // 強制で100を取得するので確認が重複するケースもある
+    let workStartMessages = getRecentMessages(120, checkTime);
+
+    // 出勤報告のあるメンバーをリストから除外する
+    preworkMembers = removeNowWorkingMembers(preworkMembers, workStartMessages);
+
+    //オ：報告を送る際はこのキャッシュ更新が要らないかも
+    let memberArrayJSON = JSON.stringify(preworkMembers);
+
+    cache.put(todayKey, memberArrayJSON, 7200);
+  }
+
+
+  // 10時以降、出勤予定のリストを元に報告を送る
+  if (isTimeForReport) {
+  // if (true) {
+    //TODO ~9:20にメンバーデータが更新されるので、更新データによる休みになった方がいるかもしれません
+
+    sendWorkingReport(preworkMembers); //「報告と送信.gs」参照
+
+    deleteTrigger(props.getProperty("MorningCheckTriggerID")); //「トリガー関連.gs」参照
+  }
+}
+
+
+
+function getRecentMessages(minutesToCheck, beforeTime) {
+  // 一定時間以内の最新メッセージをCWから読み取る
+  let messages = getUnreadMessages2(props.getProperty("KINTAI_ROOM"));
+  if (!messages.length) {
+    console.log("警告：メッセージが0件ありました");
+    return [];
+  }
+
+
+  let recentMessages = messages.filter(el => {
+    const delta = beforeTime.valueOf() - el["send_time"] * 1000; // 単位がミリ秒で統一
+    return delta < minutesToCheck * 60 * 1000 && delta > -60 * 1000;
+    //「delta > -60 * 1000」は10:00後の報告を除外するためです（10:00ぴったりはOKなので「> 0」じゃない）
+  }); 
+
+  if(!recentMessages.length){
+    console.log("警告：" + minutesToCheck + "分以内のメッセージはありませんでした");
+    return [];
+  }
+
+  //TODO この時点で件数が100の場合、logで警告を送る（上限達しているから）
+  //→オ：今はforceで毎回100件を読み取るけど
+
+  let filteredMessages = recentMessages.filter(el => {
+    return el["body"].includes(REMOTE_WORK_START) || el["body"].includes(OFFICE_WORK_START);
+  });
+  console.log(filteredMessages[0]);
+  console.log(filteredMessages.length);
+
+  return filteredMessages;
+}
+
+//＊＊既存のget関数
+function getUnreadMessages2(roomID) {
+  // Fetchリクエストのパラメーター
+  // "?force=1"は最大の件数を取得するため
+  // オ：何回かメッセージを獲得することになったらforceはなしでいいかも
+  let url = "https://api.chatwork.com/v2/rooms/" + roomID + "/messages?force=1";
+  let params = {
+    headers: { "X-ChatWorkToken": props.getProperty("API_TOKEN") },
+    method: "GET"
+  };
+
+  let res = UrlFetchApp.fetch(url, params);
+
+  if (res != "") {
+    let dataArr = JSON.parse(res.getContentText());
+    return dataArr;
+  }
+};
+
+
+
+function removeNowWorkingMembers(memberArray, messageArray) {
+  console.log("削除前の人数は：" + memberArray.length);
+
+  if(!messageArray) {
+    console.log("勤務を始めたメンバーがいないようです（新しいメッセージがない）")
+    return memberArray;
+  }
+
+  const memberIDs = memberArray.map((member) => member.id);
+
+  let nowWorkingArray = []; // logを残すための配列
+  for (const message of messageArray) {
+    let senderID = message["account"]["account_id"];
+
+    let senderIndex = memberIDs.indexOf(senderID);
+  
+    if (senderIndex == -1) {
+      console.log(senderID + "が出勤予定のリストに入っていなかったようです。出勤報告は既に確認できたでしょうか？");
+      continue;
+    }
+
+    memberArray[senderIndex].hasStartedWorking = true; // 除外のために値を追加する
+    nowWorkingArray.push(senderID);
+  }
+
+  let trimmedMemberArray = memberArray.filter((member) => !member.hasStartedWorking);
+
+  console.log("削除後の人数は：" + trimmedMemberArray.length);
+  console.log("以下メンバーの出勤が確認できました：\n" + nowWorkingArray);
+
+  return trimmedMemberArray;
+}
