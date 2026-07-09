@@ -1,0 +1,13 @@
+const englishDivisionTeams = ['English Division','英語'];
+const asiaDivisionTeams = ['Asia Division','繁体字','簡体字','韓国語','タイ語','アラビア語'];
+const europeDivisionTeams = ['Europe & Latin America Divisio','スペイン語','イタリア語','ドイツ語','フランス語','ポルトガル語']
+
+const englishDivisionShukkou = ['アレックス'];
+const asiaDivisionShukkou = ['ネネ','ミンジョン','サンウン']; //[6/19/2026] オ：名前から呼び方に変更
+const europeDivisionShukkou = [];
+
+let asiaDivisionDLSLs;
+let englishDivisionDLSLs;
+let europeDivisionDLSLs;
+
+const coreNashiMembers = [];
