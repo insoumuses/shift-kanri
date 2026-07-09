@@ -1,0 +1,71 @@
+function sendWorkingReport(missingMembers) {
+  
+  let botKun = BotKun.summon(magicIncantation);
+  
+  if(!missingMembers.length){
+    console.log("全員出勤しているようです");
+
+    botKun.cw.send.message(roomid, "R、前R、A、前の方が全員出勤しているようです。", false);
+    return;
+  }
+
+  //オ：従来のやり方ならBotKunを使わないといけないね
+  //　→立ち上げの際にDL・SLをキャッシュに放り込むのもいいかも
+  let members = botKun.cw.members.stored;
+
+  //オ：グローバルの関数を無くしたほうがいいかも
+  let asiaDivDLSLs = members.filter(el => el['チーム'] == 'Asia Division'),
+      englishDivDLSLs = members.filter(el => el['チーム'] == 'English Division'),
+      europeDivDLSLs = members.filter(el => el['チーム'] == 'Europe & Latin America Division');
+
+  if (!botKun.businessDays.isDayOff()) {
+    console.log("平日なので、出勤中の方にのみTOをつける");
+
+    asiaDivDLSLs = asiaDivDLSLs.filter(el => el['出勤中']);
+    englishDivDLSLs = englishDivDLSLs.filter(el => el['出勤中']);
+    europeDivDLSLs = europeDivDLSLs.filter(el => el['出勤中']);
+  }  
+
+
+  let toList = [];
+  // asiaDivisionTeamsなどは「TeamLayout.gs」で定義されている
+  // missingMembersは「チェック立ち上げ.gs」にあるSimpleMember使用
+  let hasAsiaDivMembers = missingMembers.some((member) =>
+    asiaDivisionTeams.includes(member.team) || asiaDivisionShukkou.includes(member.name)
+  );
+  let hasEngDivMembers = missingMembers.some((member) =>
+    englishDivisionTeams.includes(member.team) || englishDivisionShukkou.includes(member.name)
+  );
+  let hasEuroDivMembers = missingMembers.some((member) =>
+    europeDivisionTeams.includes(member.team) || europeDivisionShukkou.includes(member.name)
+  );
+  
+  if (hasAsiaDivMembers) toList.push(...asiaDivDLSLs);
+  if (hasEngDivMembers) toList.push(...englishDivDLSLs);
+  if (hasEuroDivMembers) toList.push(...europeDivDLSLs);
+
+
+  if (!toList.length) {
+    // 特定のチームがなかった場合、全部のDL・SLにTOをつける
+    toList.push(...asiaDivDLSLs, ...englishDivDLSLs, ...europeDivDLSLs);
+  }
+  console.log(toList);
+
+
+  let message = "";
+  for (const member of toList) {
+    message += `[To:${member['CW_ID']}]${member['呼び方']}さん\n`
+  }
+
+  message += "お疲れ様です。\nこちらの方が出勤していますでしょうか\nご確認よろしくお願いいたします(bow)\n[info]";
+
+  for (const member of missingMembers) {
+    message += `・${member.name}\n`;
+  };
+
+  message = message.slice(0, -1) + "[/info]";
+
+  console.log(message);
+  //オ：botKunじゃないsendがあれば完全に使わないことにできる
+  botKun.cw.send.message(roomid, message, false);
+}
