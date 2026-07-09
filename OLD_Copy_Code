@@ -1,0 +1,227 @@
+// 定数登録(スクリプトプロパティ)：新規および追加登録時実行 ※何回実行しても上書きされるだけです
+function Copy_SetScriptProperties() {
+  const props = PropertiesService.getScriptProperties();
+  
+  props.setProperty('API_TOKEN',                '');
+  props.setProperty('KINTAI_ROOM',              '');                       
+  props.setProperty('GYOUMUITAKU_KINTAI_ROOM',  '');                   
+  props.setProperty('TARGET_ROOM',              '');                       // 勤怠くん Room
+  props.setProperty('【海外】2026年シフト表v1.0',  '""');
+  props.setProperty('ボットマスターデータ',        '""');
+
+  return 0;
+}
+
+function Copy_morningTimer(){
+
+  const Copy_now = new Date( 2026, 3+1, 10);  // 2026/03/10 動作確認用固定データ
+//  const Copy_now = new Date();
+
+  const hour = Copy_now.getHours();
+  const minute = Copy_now.getMinutes();
+
+  if(hour == 7 && minute <= 5) {
+    // テスト用
+    let memberSS = SpreadsheetApp.openByUrl(props.getProperty('【海外】2026年シフト表v1.0'));
+    let memberData = memberSS.getSheetByName("メンバーデータ").getDataRange();
+    console.log("「メンバーデータ」が指している日は："+memberData.getCell(1, 8).getValue());
+    SpreadsheetApp.flush();
+    console.log("「メンバーデータ」が指している日は："+memberData.getCell(1, 8).getValue());
+
+    // ボット君生成
+    const botKun = BotKun.summon(magicIncantation);
+  }
+
+  if(hour == 10 && minute <= 5) {
+    // テスト用
+    let memberSS = SpreadsheetApp.openByUrl(props.getProperty('【海外】2026年シフト表v1.0'));
+    let memberData = memberSS.getSheetByName("メンバーデータ").getDataRange();
+    console.log("「メンバーデータ」が指している日は："+memberData.getCell(1, 8).getValue());
+    
+    // ボット君生成
+    const botKun = BotKun.summon(magicIncantation);
+    botKun.cw.members.reload();
+
+    Copy_checkShukkin(botKun);
+  }
+}
+
+function Copy_testShukkinCheck() {
+  const botKun = BotKun.summon(magicIncantation);
+  botKun.cw.members.reload();
+
+  Copy_checkShukkin(botKun);
+}
+
+function Copy_checkShukkin(botKun) {
+  const prop = PropertiesService.getScriptProperties();
+  
+  let messages = [
+                    ...getUnreadMessages(prop.getProperty('KINTAI_ROOM')), 
+                    ...getUnreadMessages(prop.getProperty('GYOUMUITAKU_KINTAI_ROOM'))
+                 ];
+  if(!messages.length){
+    console.log("Warning: no messages found!");
+    return;
+  }
+  
+  /**
+   * [8/27/2025]
+   * https://developer.chatwork.com/reference/get-rooms-room_id-messages
+   * force - "1を指定した場合は強制的に最新のメッセージを最大100件まで取得します。"
+   * オ：現在は100を超えていることがあり得ると思う
+   * ＞200になることは2つの部屋の情報を読み取っているから
+   */
+
+  let posters = messages.map(el => [el['account']['account_id'],new Date(el['send_time']*1000)]);
+  if(!posters.length){
+    console.log("Warning: no posters found!");
+    return;
+  }
+
+  let todaysPosters = posters.filter(el => Math.abs(Copy_now - el[1]) < 1000 * 60 * 60 * 3); // Posts done in the last 3 hours
+  if(!todaysPosters.length){
+    console.log("Warning: no posters from today found!");
+    return;
+  }
+  todaysPosters = todaysPosters.map(el => el[0]);
+  
+  /**
+   * [8/27/2025]
+   * https://developer.chatwork.com/reference/get-rooms-room_id-messages
+   * force - "1を指定した場合は強制的に最新のメッセージを最大100件まで取得します。"
+   * オ：現在は100を超えていることがあり得ると思う
+   * ＞200になることは2つの部屋の情報を読み取っているから
+   */
+  console.log("今日取得したメッセージ数："+todaysPosters.length); //　確認用
+
+  members = botKun.cw.members.stored;
+  //[9/22/25] 日付の指定は現在できないので、「Copy_now.getDate」の因数は使用されていない
+  todaysMembers = botKun.cw.members.filterPresentOnly(members, Copy_now.getDate() - 1);
+
+  // オ：こういう関数はBotKunに入れといたほうがいいのかな…
+//  postingMembers = todaysMembers.filter(el =>  // Don't trigger for:
+//                                       (el['出勤設定'] != "後R") && //People working in the afternoon
+//                                       (el['出勤設定'] != "後E") &&
+//                                       (el['出勤設定'] != "A") && //People working in the office
+//                                       (el['出勤設定'] != "大") &&
+//                                       (el['出勤設定'] != "後大") && //People working in the afternoon in Osaka
+//                                       (el['出勤設定'] != "前") &&
+//                                       (el['出勤設定'] != "後") &&
+//                                       (el['出勤設定'] != "入社") &&
+//                                       !coreNashiMembers.includes(el['シフト名'])); //People that don't start at 10:00
+
+  const excludeStatuses = ["後R", "後E", "A", "大", "後大", "前", "後", "入社"];
+
+  const postingMembers = todaysMembers.filter(
+  	el => {
+   		const isExcludedStatus = excludeStatuses.includes(el['出勤設定']);      // 出勤設定(excludeStstuses配列内データ)の判定
+   		const iscoreNashiMember = coreNashiNMembers.includes(el['シフト名']);   // 「シフト名」内の判定
+
+    	// 「除外ステータスに含まれない」かつ「coreNashiMembersに含まれない」
+    	return !isExcludedStatus && !iscoreNashiMember;                       // 最終判断はここで
+    }
+  );
+
+
+  if(!postingMembers.length){
+    console.log("Warning: no members here today!");
+    return;
+  }
+  
+  let missingMembers = [];
+
+  for(let member of postingMembers){
+    if(!todaysPosters.includes(member['CW_ID'])) missingMembers.push(member);
+  };
+
+  console.log(missingMembers);
+  
+  if(!missingMembers.length){
+    console.log("Function exited: all members are here today!");
+    return;
+  }
+
+  let toList = [];
+
+  if(botKun.businessDays.isDayOff()){
+    console.log("Day off!");
+    asiaDivisionDLSLs = members.filter(el => el['チーム'] == 'Asia Division');
+    englishDivisionDLSLs = members.filter(el => el['チーム'] == 'English Division');
+    europeDivisionDLSLs = members.filter(el => el['チーム'] == 'Europe & Latin America Division');
+  }else{
+    console.log("Business day!");
+    asiaDivisionDLSLs = todaysMembers.filter(el => el['チーム'] == 'Asia Division');
+    englishDivisionDLSLs = todaysMembers.filter(el => el['チーム'] == 'English Division');
+    europeDivisionDLSLs = todaysMembers.filter(el => el['チーム'] == 'Europe & Latin America Division');
+  }  
+
+  for(let member of missingMembers){
+    if(asiaDivisionTeams.includes(member['チーム']) || asiaDivisionShukkou.includes(member['シフト名'])){
+      if(!toList.some(r=> asiaDivisionDLSLs.indexOf(r) >= 0)) toList.push(...asiaDivisionDLSLs);
+      continue;
+    }
+    if(englishDivisionTeams.includes(member['チーム']) || englishDivisionShukkou.includes(member['シフト名'])){
+      if(!toList.some(r=> englishDivisionDLSLs.indexOf(r) >= 0)) toList.push(...englishDivisionDLSLs);
+      continue;
+    }
+    if(europeDivisionTeams.includes(member['チーム']) || europeDivisionShukkou.includes(member['シフト名'])){
+      if(!toList.some(r=> europeDivisionDLSLs.indexOf(r) >= 0)) toList.push(...europeDivisionDLSLs);
+      continue;
+    }
+
+  };
+
+  if(!toList.length){
+    // toList.append(...asiaDivisionDLSLs, englishDivisionDLSLs, europeDivisionDLSLs);
+    //[9/22/25] オ：appendは違うと思いますので、pushに変更しました。後は「...」のスプレッド構文は各引数につける必要があると思う
+    toList.push(...asiaDivisionDLSLs, ...englishDivisionDLSLs, ...europeDivisionDLSLs);
+  }
+  console.log(toList);
+
+  let message = "";
+
+  for(member of toList){
+    message += `[To:${member['CW_ID']}]${member['呼び方']}さん\n`
+  }
+
+  message += "お疲れ様です。\nこちらの方が出勤していますでしょうか\nご確認よろしくお願いいたします(bow)\n[info]";
+
+  for(let member of missingMembers){
+    message += `・${member['呼び方']}\n`;
+  };
+
+  message = message.slice(0,-1) + "[/info]";
+
+  console.log(message);
+// スクリプト確認用なので送信は停止しています　ここから
+//  botKun.cw.send.message(prop.getProperty('TARGET_ROOM'), message, false);
+// スクリプト確認用なので送信は停止しています　ここまで
+}
+
+// function filterCommandMessages (roomObject) {
+//   console.time('filterCommandMessages runtime');
+      
+//   /** Function core logic **/
+//   let rawMessageArray = getUnreadMessages(roomObject);
+//   if (rawMessageArray){
+//     return filterMessages (rawMessageArray);
+//   }
+
+function Copy_getUnreadMessages (roomID){
+  const prop = PropertiesService.getScriptProperties();
+
+  // FetchCall parameters declaration
+  let url = "https://api.chatwork.com/v2/rooms/" + roomID + "/messages?force=1";
+  let params = {
+    headers : {"X-ChatWorkToken" : prop.getProperty('API_TOKEN')},
+    method : "GET"
+  };
+  // Actual FetchCall
+  let res = UrlFetchApp.fetch(url, params);
+  if (res != ""){
+  // return 
+    let dataArr = JSON.parse(res.getContentText());
+    return dataArr;
+  }
+};
