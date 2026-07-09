@@ -1,0 +1,100 @@
+function SimpleMember(name, team, position, id, status, willWork) {
+  this.name = name;
+  this.team = team;
+  this.position = position;
+  this.id = id;
+  this.status = status;
+  this.willWork = willWork;
+  // オ：出勤時間の項目も必要になるかな
+}
+
+// オ：エラーを避けるためにコメント化
+const props = PropertiesService.getScriptProperties();
+
+
+
+function startWorkingCheck() {
+
+  // メンバー情報を読みとり、出勤予定のメンバーだけでオブジェクトの配列を作る
+  let preworkMembers = getWorkingMembersArray();
+  console.log(preworkMembers[0]);
+  
+  // リストをキャッシュに書き込む
+  // オ：SimpleMemberオブジェクトは割と小さいと思うけど、サイズが問題になるとシートに書き込むのも問題ないはずです
+  let cache = CacheService.getScriptCache();
+
+  let todayKey = new Date().getFullYear() + "-" + (now.getMonth() + 1) + "-" + now.getDate();
+
+  let memberArrayJSON = JSON.stringify(preworkMembers);
+  
+  // cache.put(todayKey, memberArrayJSON);
+  cache.put(todayKey, memberArrayJSON, 7200);
+
+
+  //TODO 今日のDL・SLをキャッシュに書き込む？
+  //オ：これをやるならgetWorkingMembersArrayを事前にfilterしないように調整する
+
+
+  createNewTimeTrigger(10, "attendanceCheckV2");
+}
+
+function testCache() {
+  const now = new Date();
+
+  let todayKey = now.getFullYear() + "-" + (now.getMonth() + 1) + "-" + now.getDate();
+  console.log(todayKey);
+
+  let cache = CacheService.getScriptCache();
+  let memberArray = cache.get(todayKey);
+  console.log(memberArray);
+}
+
+
+
+function getWorkingMembersArray() {
+
+  // オ：「BotKun」ライブラリーの負担を減るため、あえて使わない？
+  let masterDataSheet = SpreadsheetApp.openByUrl("");
+  let memberDataArray = masterDataSheet.getSheetByName("メンバーデータ").getDataRange().getValues();
+
+  // 出勤予定メンバーだけのリストを作成
+  let dataHeaders = memberDataArray.shift();
+  console.log(dataHeaders);
+
+  let nameIndex = dataHeaders.indexOf("呼び方"),
+      teamIndex = dataHeaders.indexOf("チーム"),
+      positionIndex = dataHeaders.indexOf("ポジション"),
+      idIndex = dataHeaders.indexOf("CW_ID"),
+      statusIndex = dataHeaders.indexOf("出勤設定"),
+      willWorkIndex = dataHeaders.indexOf("出勤中");
+
+  // console.log("必要なヘッダーはこちらのインデックス：" + nameIndex + ", " + teamIndex + ", " + positionIndex + ", " + idIndex + ", " + statusIndex + ", " + willWorkIndex);
+
+  // let workingMemberRawArray = memberDataArray.filter((member) =>
+  //   member[willWorkIndex] == true && //オ：今思えば、これを確認する必要がないかも（ステータスがあれば出勤予定ですから）
+  //   (member[statusIndex] == "R" || member[statusIndex] == "前R")
+  // );
+  //[4-30-26] 渡邊さんが書いたコードをベースに出社メンバーの報告対応
+  const workingStatuses = ["R", "前R", "A", "前"];
+
+  const workingMemberRawArray = memberDataArray.filter(
+    el => {
+      const isWorkingStatus = workingStatuses.includes(el[statusIndex]); // 出勤設定(workingStatuses配列内データ)の判定
+      const isCoreNashiMember = coreNashiMembers.includes(el[nameIndex]); // 「シフト名」内の判定
+
+      return isWorkingStatus && !isCoreNashiMember; // 「出勤ステータスがある」かつ「coreNashiMembersに含まれない」
+    }
+  );
+
+
+  // 必要な項目だけのオブジェクトで配列を作り直す
+  return workingMemberRawArray.map((member) =>
+    new SimpleMember(
+      member[nameIndex],
+      member[teamIndex],
+      member[positionIndex],
+      member[idIndex],
+      member[statusIndex],
+      member[willWorkIndex])
+  );
+}
