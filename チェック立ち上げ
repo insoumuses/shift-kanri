@@ -1,5 +1,6 @@
-function SimpleMember(name, team, position, id, status, willWork) {
+function SimpleMember(name, group, team, position, id, status, willWork) {
   this.name = name;
+  this.group = group; //【2026/7/23】追加
   this.team = team;
   this.position = position;
   this.id = id;
@@ -54,7 +55,7 @@ function testCache() {
 function getWorkingMembersArray() {
 
   // オ：「BotKun」ライブラリーの負担を減るため、あえて使わない？
-  let masterDataSheet = SpreadsheetApp.openByUrl("");
+  let masterDataSheet = SpreadsheetApp.openByUrl("https://docs.google.com/spreadsheets/d/1zr8Vtk5907bohi-qlR6Wr8p1dCiC8CZ0R9GS5RarqcU/");
   let memberDataArray = masterDataSheet.getSheetByName("メンバーデータ").getDataRange().getValues();
 
   // 出勤予定メンバーだけのリストを作成
@@ -62,18 +63,15 @@ function getWorkingMembersArray() {
   console.log(dataHeaders);
 
   let nameIndex = dataHeaders.indexOf("呼び方"),
+      groupIndex = dataHeaders.indexOf("グループ"), //【2026/7/23】追加
       teamIndex = dataHeaders.indexOf("チーム"),
       positionIndex = dataHeaders.indexOf("ポジション"),
       idIndex = dataHeaders.indexOf("CW_ID"),
       statusIndex = dataHeaders.indexOf("出勤設定"),
       willWorkIndex = dataHeaders.indexOf("出勤中");
-
   // console.log("必要なヘッダーはこちらのインデックス：" + nameIndex + ", " + teamIndex + ", " + positionIndex + ", " + idIndex + ", " + statusIndex + ", " + willWorkIndex);
 
-  // let workingMemberRawArray = memberDataArray.filter((member) =>
-  //   member[willWorkIndex] == true && //オ：今思えば、これを確認する必要がないかも（ステータスがあれば出勤予定ですから）
-  //   (member[statusIndex] == "R" || member[statusIndex] == "前R")
-  // );
+
   //[4-30-26] 渡邊さんが書いたコードをベースに出社メンバーの報告対応
   const workingStatuses = ["R", "前R", "A", "前"];
 
@@ -91,6 +89,7 @@ function getWorkingMembersArray() {
   return workingMemberRawArray.map((member) =>
     new SimpleMember(
       member[nameIndex],
+      member[groupIndex], //【2026/7/23】追加
       member[teamIndex],
       member[positionIndex],
       member[idIndex],
